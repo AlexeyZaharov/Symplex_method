@@ -2,6 +2,7 @@
 #include <fstream>
 #include <sstream>
 #include <iomanip>
+#include <vector>
 
 class Symplex_method {
 private:
@@ -26,9 +27,8 @@ private:
 	std::size_t columns_;
 
 	void creating_symplex_table() {
-			rows_ = length + 1; //симплекс-таблица имеет размер на одну больше строку (значения функции)
-			columns_ = high + 1; // и на один больше столбец (столбец свободных членов), чем матрица А
-
+			rows_ = high + 1; //симплекс-таблица имеет размер на одну больше строку (значения функции)
+			columns_ = length + 1; // и на один больше столбец (столбец свободных членов), чем матрица А
 			symplex_table = new double * [rows_]; // выделение памяти для таблицы
 			for (auto i = 0; i < rows_; i++) {
 				symplex_table[i] = new double[columns_];
@@ -59,7 +59,7 @@ private:
 
 		for (auto m = 0; m < rows_; m++) { // хранящей значения предыдущей
 			between[m] = new double[columns_];
-			for (auto n = 0; n < rows_; n++) {
+			for (auto n = 0; n < columns_; n++) {
 				between[m][n] = symplex_table[m][n];
 			}
 		}
@@ -102,14 +102,15 @@ private:
 		}
 		delete[] between;
 
-		for (auto j = 0; j < length; j++) { // занесение значений переменных в столбец x
+		for (auto j = 0; j < high; j++) { // занесение значений переменных в столбец x
 			x[int(basis[j]) - 1] = symplex_table[j][0];
 		}
-		for (auto j = 0; j < high; j++) {
+		for (auto j = 0; j < length; j++) {
 			x[int(free[j]) - 1] = 0;
 		}
 
-		std::swap(x[high + i], x[k-1]); // с учетом смены строки-столбца
+		//std::swap(x[high + i], x[k-1]); // с учетом смены строки-столбца
+		std::swap(x[int(basis[i]) - 1], x[int(free[k - 1]) - 1]);
 		std::swap(basis[i], free[k-1]);
 
 	}
@@ -137,7 +138,7 @@ private:
 
 		if (i == -1) {
 			for (auto j = 0; j < high; j++) {
-				x[j + high] = symplex_table[j][0];
+				x[j + length] = symplex_table[j][0];
 			}
 			return; // если столбец свободных членов неотрицательный, это и есть опорное решение
 		}
@@ -155,8 +156,9 @@ private:
 				i = j;
 			}
 		}
-
+		write_table();
 		jordan_exceptions(i, k); // изменение симплекс-таблицы
+		finding_reference_solution();
 	}
 
 	bool is_minimum() {
@@ -190,7 +192,7 @@ private:
 		double min;
 		for (auto j = 0; j < rows_ - 1; j++) {
 			if (symplex_table[j][k] > 0 && symplex_table[rows_ - 1][k] > 0) {
-				if (symplex_table[j][0] > 0) {
+				if (symplex_table[j][0] >= 0) {
 					min = symplex_table[j][0] / symplex_table[j][k];
 					i = j;
 					break;
@@ -208,10 +210,10 @@ private:
 			}
 		}
 
-		for (auto j = i; j < rows_; j++) {
+		for (auto j = i; j < rows_ - 1; j++) {
 			if (symplex_table[j][k] != 0) {
 				double Min_ = symplex_table[j][0] / symplex_table[j][k];
-				if ( Min_ > 0 && Min_ < min) {
+				if ( Min_ >= 0 && Min_ < min) {
 					min = Min_;
 					i = j;
 				}
@@ -296,10 +298,153 @@ private:
 		std::cout << "F maximum is  " << std::setprecision(3) << -symplex_table[rows_ - 1][0] << std::endl << std::endl;
 	}
 
-public:
-	Symplex_method() {
+	double create_new_problem(std::vector<double> & vector, int k, int m = 1) {
+		std::ofstream fout(R"(C:\Users\Asus\Desktop\another.txt)");
+		fout << length << std::endl;
+		for (auto i = 0; i < length; ++i) {
+			fout << c[i];
+			if (i != high - 1)
+				fout << ' ';
+		}
+		fout << std::endl << ';' << std::endl;
 
-		std::ifstream fin(R"(C:\Users\Asus\Desktop\lab01.txt)"); // чтение данных из файла
+		fout << high + 1 << ", " << length << std::endl;
+		for (auto i = 0; i < high; ++i) {
+			for (auto j = 0; j < length; ++j) {
+				fout << A[i][j];
+				if (j != length - 1)
+					fout << ' ';
+			}
+			fout << std::endl;
+		}
+		fout << 1 * m << ' ';
+		for (auto j = 0; j < length - 1; ++j) {
+			fout << 0;
+			if (j != length - 2)
+				fout << ' ';
+		}
+
+		fout << std::endl << ';' << std::endl;
+		fout << high + 1 << std::endl;
+		for (auto i = 0; i < high; ++i) {
+			fout << b[i] << ' ';
+		}
+		fout << m*k;
+		fout.close();
+
+		Symplex_method another_problem(R"(C:\Users\Asus\Desktop\another.txt)");
+
+		return another_problem.MBB(vector);
+
+		return 0;
+	};
+
+	double MBB(std::vector<double> & vector) {
+		algorithm();
+		for (auto i = 0; i < length; ++i) {
+			vector.push_back(x[i]);
+		}
+
+		double record = -symplex_table[rows_ - 1][0], record1, record2;
+		int floor, ceil;
+		std::vector<double> vector1, vector2;
+		for (auto i = 0; i < length; ++i) {
+			if (int(x[i]) != x[i]) {
+				floor = int(x[i]);
+				ceil = int(x[i] + 1);
+
+				record1 = create_new_problem(vector1, floor);
+
+				record2 = create_new_problem(vector2, ceil, -1);
+
+				record1 = record1 < record2 ? record2 : record1;
+				if (record1 == record2)
+					vector1 = vector2;
+
+				record = record1 < record ? record1 : record;
+				if (record == record1)
+					vector = vector1;
+			}
+		}
+		return record;
+	}
+
+public:
+	void dual_problem() {
+		std::swap(b, c);
+		std::swap(length, high);
+		for (auto i = 0; i < high; ++i) {
+			b[i] *= -1;
+		}
+		for (auto i = 0; i < length; ++i) {
+			c[i] *= -1;
+		}
+
+		double ** B = new double * [columns];
+
+		for (auto i = 0; i < columns; i++) {
+			B[i] = new double[rows];
+		}
+
+		for (auto i = 0; i < columns; i++) {
+			for (auto j = 0; j < rows; ++j) {
+				B[i][j] = A[j][i] * -1;
+			}
+		}
+
+		std::swap(A, B);
+
+		for (auto i = 0; i < rows; i++) {
+			delete[] B[i];
+		}
+		delete[] B;
+
+		for (auto i = 0; i < rows_; i++) {
+			delete[] symplex_table[i];
+		}
+		delete[] symplex_table;
+
+		std::swap(rows, columns);
+
+		for (auto i = 0; i < number; i++) {
+			x[i] = 0;
+		}
+		delete[] free;
+		delete[] basis;
+
+		free = new double [length];
+		basis = new double [high];
+
+		for (auto i = 0; i < length; i++) {
+			free[i] = i + 1;
+		}
+
+		for (auto i = 0; i < high; i++) {
+			basis[i] = length + i + 1;
+		}
+		
+		creating_symplex_table();
+		write_table();
+
+		algorithm();
+	}
+
+	void MBB() {
+		std::vector<double> vector;
+		double record = MBB(vector);
+
+		std::cout << "Optimal integer solution is:" << std::endl;
+
+		for (auto i = 0; i < length; i++) {
+			std::cout << "X" << i + 1 << " = " << vector[i] << std::endl;
+		}
+
+		std::cout << "F(integer) maximum is " << record;
+	}
+
+	Symplex_method(std::string name_of_file = R"(C:\Users\Asus\Desktop\lab01.txt)") {
+
+		std::ifstream fin(name_of_file); // чтение данных из файла
 		if ( fin.is_open() ) {
 			char symbol;
 
@@ -313,7 +458,6 @@ public:
 			if (fin >> symbol && symbol == ';' &&
 				fin >> rows && fin >> symbol &&
 				symbol == ',' && fin >> columns) { // считывание матрицы ограничений А
-
 				A = new double * [rows];
 				for (auto i = 0; i < rows; i++) {
 					A[i] = new double[columns];
@@ -322,7 +466,7 @@ public:
 					}
 				}
 			}
-
+			
 			if (fin >> symbol && symbol == ';' && fin >> high) { // считывание столбца ограничений b
 				b = new double[high];
 				for (auto i = 0; i < high; i++) {
@@ -347,7 +491,6 @@ public:
 			}
 
 			creating_symplex_table(); // создание симплекс таблицы
-
 			fin.close();
 		}
 	}
@@ -381,21 +524,23 @@ public:
 			int k = 0;
 			find_resolving_column(k); // поиск разрешающего столбца
 			auto i = find_resolving_row(k); // поиск разрешающей строки
-
+			
+			std::cout << "Resolving colomn is " << k << "\tResolving row is " << i << std::endl;
 			jordan_exceptions(i, k); // изменение симплекс таблицы
-
+			
 			write_table(); // вывод таблицы на печать
 		}
 
 		write_solution(); // вывод на печать оптимального решения задачи
 	}
-
 };
 
 int main()
 {
 	Symplex_method lab; // создание объекста класса
-	lab.algorithm(); // решение задачи лабараторной работы
+	//lab.dual_problem(); // решение двойственной задачи лабараторной работы
+	//lab.algorithm();	// решение задачи лабараторной работы
+	lab.MBB();
 
 	return 0;
 }
